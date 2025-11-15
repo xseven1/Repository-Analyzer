@@ -52,17 +52,17 @@ class RepoFetcher:
     def _fetch_commits(self, repo) -> List[Dict]:
         commits = []
         try:
-            # Don't convert to list first - iterate directly
+            # Reduce from 200 to 50 commits
             commit_count = 0
             for commit in repo.get_commits():
-                if commit_count >= 200:
+                if commit_count >= 50:
                     break
                 
                 try:
-                    # Accessing commit.files can be expensive
+                    # Limit files per commit to 10
                     files_changed = []
                     if commit.files:
-                        files_changed = [f.filename for f in commit.files[:20]]  # Limit files per commit
+                        files_changed = [f.filename for f in commit.files[:10]]
                     
                     commits.append({
                         "sha": commit.sha,
@@ -77,7 +77,7 @@ class RepoFetcher:
                     })
                     commit_count += 1
                     
-                    if commit_count % 50 == 0:
+                    if commit_count % 25 == 0:
                         print(f"  Fetched {commit_count} commits...")
                         
                 except Exception as e:

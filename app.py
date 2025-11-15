@@ -10,7 +10,7 @@ st.markdown("*Ask detailed questions about any GitHub repository*")
 # Sidebar
 with st.sidebar:
     st.header("📚 Index Repository")
-    repo_url = st.text_input("GitHub URL", "https://github.com/octocat/Hello-World")
+    repo_url = st.text_input("GitHub URL", "https://github.com/fastapiutils/fastapi-utils")
     
     if st.button("Index Repository", type="primary"):
         progress_bar = st.progress(0)
@@ -125,7 +125,3 @@ if st.button("🔍 Ask Question", type="primary"):
                 )
         else:
             st.error(f"❌ Error: {response.json()['detail']}")
-
-# Footer
-st.divider()
-st.caption("🤖 Powered by LangChain, GPT-4o-mini, and ChromaDB")
