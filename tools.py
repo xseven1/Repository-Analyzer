@@ -227,55 +227,72 @@ class RepoTools:
             return output
         except Exception as e:
             return f"Error searching commits: {str(e)}"
-    
     def get_pr_details(self, pr_number: str) -> str:
-        """Get detailed PR information with impact analysis"""
+        """Get detailed PR information"""
         try:
             pr_num = int(pr_number)
             
+            # First try: filter by metadata
             results = self.collection.query(
-                query_texts=[f"pull request {pr_number}"],
-                n_results=5,
-                where={"type": "pr", "number": pr_num}
+                query_texts=[f"pull request #{pr_number}"],
+                n_results=10,
+                where={"type": "pr"}
             )
             
             if not results['documents'][0]:
-                return f"No PR found with number {pr_number}"
+                return f"No PR found with number {pr_number}. Repository may not have PRs indexed."
             
-            doc = results['documents'][0][0]
-            metadata = results['metadatas'][0][0]
+            # Find the matching PR by scanning metadata
+            found_pr = None
+            found_meta = None
             
-            output = f"=== PULL REQUEST #{pr_number} DETAILS ===\n\n"
-            output += f"Title: {metadata.get('title', 'N/A')}\n"
-            output += f"State: {metadata.get('state', 'unknown').upper()}\n"
-            output += f"Author: {metadata.get('author', 'Unknown')}\n"
-            output += f"Created: {metadata.get('date', 'Unknown')[:10]}\n\n"
+            for doc, meta in zip(results['documents'][0], results['metadatas'][0]):
+                if meta.get('number') == pr_num or meta.get('number') == str(pr_num):
+                    found_pr = doc
+                    found_meta = meta
+                    break
             
-            output += "📋 FULL CONTENT:\n"
-            output += f"{doc}\n\n"
+            if not found_pr:
+                return f"PR #{pr_number} not found in indexed data. Available PRs in results: {[m.get('number') for m in results['metadatas'][0][:5]]}"
             
-            # Try to get live PR data for additional context
+            output = f"=== PULL REQUEST #{pr_number} ===\n\n"
+            output += f"Title: {found_meta.get('title', 'N/A')}\n"
+            output += f"State: {found_meta.get('state', 'unknown').upper()}\n"
+            output += f"Author: {found_meta.get('author', 'Unknown')}\n"
+            output += f"Created: {found_meta.get('date', 'Unknown')[:10]}\n\n"
+            
+            output += "DESCRIPTION AND CONTENT:\n"
+            output += "="*70 + "\n"
+            output += f"{found_pr}\n\n"
+            
+            # Try to get live PR data
             try:
                 pr = self.repo.get_pull(pr_num)
-                output += "💡 ADDITIONAL CONTEXT:\n"
-                output += f"   • Commits: {pr.commits}\n"
-                output += f"   • Changed files: {pr.changed_files}\n"
-                output += f"   • Additions: +{pr.additions}\n"
-                output += f"   • Deletions: -{pr.deletions}\n"
-                output += f"   • Comments: {pr.comments}\n"
+                output += "="*70 + "\n"
+                output += "LIVE DATA FROM GITHUB API:\n"
+                output += "="*70 + "\n"
+                output += f"Commits: {pr.commits}\n"
+                output += f"Changed files: {pr.changed_files}\n"
+                output += f"Lines added: +{pr.additions}\n"
+                output += f"Lines deleted: -{pr.deletions}\n"
+                output += f"Comments: {pr.comments}\n"
+                output += f"Review comments: {pr.review_comments}\n"
                 
                 if pr.merged:
-                    output += f"   • ✅ Merged by {pr.merged_by.login if pr.merged_by else 'Unknown'}\n"
+                    merge_date = pr.merged_at.strftime('%Y-%m-%d') if pr.merged_at else 'Unknown'
+                    merger = pr.merged_by.login if pr.merged_by else 'Unknown'
+                    output += f"Status: MERGED on {merge_date} by {merger}\n"
                 elif pr.state == 'closed':
-                    output += "   • ❌ Closed without merging\n"
+                    output += "Status: CLOSED (not merged)\n"
                 else:
-                    output += "   • ⏳ Still open\n"
-            except:
-                pass
+                    output += "Status: OPEN\n"
+            except Exception as e:
+                output += f"\n(Could not fetch live GitHub data: {str(e)})\n"
             
             return output
+            
         except ValueError:
-            return f"Invalid PR number: {pr_number}. Please provide a numeric PR number."
+            return f"Invalid PR number: '{pr_number}'. Must be a number (e.g., '26' not '#26')."
         except Exception as e:
             return f"Error getting PR details: {str(e)}"
     
@@ -545,21 +562,25 @@ Use for understanding how the repository evolved during specific time periods.""
                 "type": "function",
                 "function": {
                     "name": "get_pr_details",
-                    "description": """Get comprehensive PR analysis with deep insights including:
-- Impact assessment (scope, risk, reviewability)
-- File change patterns and architectural implications
-- Testing and documentation status
-- Review discussion quality and depth
-- Merge decision rationale
-- Recommendations for similar future PRs
+                    "description": """Get detailed information for a specific pull request.
 
-Provides context that helps understand not just the PR content, but its quality, risk level, and impact on the codebase. Input should be ONLY the PR number.""",
+            Returns:
+            - PR title, description, and body text
+            - State (open/closed/merged)
+            - Author and creation date
+            - Files changed (list of file paths)
+            - Line changes (additions/deletions)
+            - Number of commits included
+            - Review comments (if any)
+            - Merge status and who merged it
+
+            Input must be ONLY the numeric PR number (e.g., "42" not "#42").""",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "pr_number": {
                                 "type": "string",
-                                "description": "The PR number (just the number, no symbols)"
+                                "description": "The PR number (digits only, no # symbol)"
                             }
                         },
                         "required": ["pr_number"]
